@@ -1,5 +1,5 @@
 # ---- Build Stage ----
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
@@ -7,15 +7,17 @@ COPY package.json package-lock.json* ./
 RUN npm ci --only=production
 
 # ---- Runtime Stage ----
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
 # Install runtime dependencies: ffmpeg + curl (for model download)
-RUN apk add --no-cache ffmpeg curl bash
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+    ffmpeg curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 
 # Copy production dependencies from builder
 COPY --from=builder /app/node_modules ./node_modules
