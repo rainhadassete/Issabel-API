@@ -21,8 +21,8 @@ Retornam metadados de paginação no body da resposta.`,
     },
     servers: [
       {
-        url: '/api',
-        description: 'Servidor atual (relativo)'
+        url: '',
+        description: 'Servidor atual'
       },
       {
         url: 'http://localhost:3030',
