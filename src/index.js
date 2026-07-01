@@ -9,9 +9,12 @@ const swaggerSpec = require('./config/swagger');
 const authRoutes = require('./routes/auth');
 const callsRoutes = require('./routes/calls');
 const statsRoutes = require('./routes/stats');
+const recordingRoutes = require('./routes/recordings');
+const transcriptionRoutes = require('./routes/transcriptions');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '0.0.0.0';
 
 // Middleware
 app.use(helmet());
@@ -48,6 +51,8 @@ app.get('/api/health', async (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/calls', callsRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api', recordingRoutes);
+app.use('/api', transcriptionRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -64,6 +69,6 @@ app.use((err, req, res, _next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Issabel API running on port ${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`🚀 Issabel API running on ${HOST}:${PORT}`);
 });

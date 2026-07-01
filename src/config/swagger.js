@@ -174,7 +174,9 @@ Retornam metadados de paginação no body da resposta.`,
       { name: 'Health', description: 'Monitoramento do servidor' },
       { name: 'Auth', description: 'Autenticação' },
       { name: 'Calls', description: 'Consulta de registros de chamadas (CDR)' },
-      { name: 'Stats', description: 'Estatísticas de chamadas' }
+      { name: 'Stats', description: 'Estatísticas de chamadas' },
+      { name: 'Recordings', description: 'Download de gravações de chamadas' },
+      { name: 'Transcriptions', description: 'Transcrição de áudio via Whisper (offline)' }
     ]
   },
   apis: ['./src/routes/*.js', './src/controllers/*.js']
