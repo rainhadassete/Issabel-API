@@ -27,7 +27,7 @@ COPY package.json ./
 # Setup whisper.cpp binary and model
 RUN mkdir -p /app/whisper/models && \
     curl -sL "https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.1/whisper-bin-ubuntu-x64.tar.gz" \
-    | tar xz --strip-components=1 -C /app/whisper/ whisper-bin-ubuntu-x64/whisper-cli && \
+    | tar xz --strip-components=1 -C /app/whisper/ && \
     chmod +x /app/whisper/whisper-cli && \
     curl -sL "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin" \
     -o /app/whisper/models/ggml-base.bin
@@ -36,6 +36,7 @@ RUN mkdir -p /app/whisper/models && \
 ENV WHISPER_BIN=/app/whisper/whisper-cli
 ENV WHISPER_MODELS_DIR=/app/whisper/models
 ENV WHISPER_MODEL=ggml-base.bin
+ENV LD_LIBRARY_PATH=/app/whisper
 
 # Expose API port
 EXPOSE 3030
