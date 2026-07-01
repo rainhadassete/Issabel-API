@@ -40,6 +40,9 @@ ENV WHISPER_MODEL=ggml-base.bin
 # Expose API port
 EXPOSE 3030
 
+# Create tmp directory with proper permissions
+RUN mkdir -p /app/tmp && chown appuser:appgroup /app/tmp
+
 # Switch to non-root user
 USER appuser
 
