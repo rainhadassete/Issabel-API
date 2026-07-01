@@ -21,8 +21,12 @@ Retornam metadados de paginação no body da resposta.`,
     },
     servers: [
       {
-        url: 'http://localhost:3000',
-        description: 'Desenvolvimento'
+        url: '/api',
+        description: 'Servidor atual (relativo)'
+      },
+      {
+        url: 'http://localhost:3030',
+        description: 'Desenvolvimento local'
       }
     ],
     components: {
