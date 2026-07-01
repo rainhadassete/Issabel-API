@@ -16,7 +16,7 @@ async function ensureTable() {
       uniqueid VARCHAR(32) NOT NULL UNIQUE,
       recordingfile VARCHAR(255) NOT NULL,
       text TEXT,
-      segments JSON,
+      segments LONGTEXT,
       language VARCHAR(10),
       duration DECIMAL(10,2),
       model VARCHAR(20),
