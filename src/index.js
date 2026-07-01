@@ -17,7 +17,12 @@ const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
 // Middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: false,
+  hsts: process.env.NODE_ENV === 'production' ? { maxAge: 63072000, includeSubDomains: true } : false,
+}));
 app.use(cors());
 app.use(morgan('dev'));
 app.use(express.json());
