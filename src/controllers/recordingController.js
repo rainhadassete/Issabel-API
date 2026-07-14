@@ -95,6 +95,43 @@ exports.downloadRecording = function downloadRecording(call, localPath) {
 };
 
 /**
+ * Locate ffmpeg binary across platforms.
+ * Checks FFMPEG_PATH env var first, then common install locations.
+ * @returns {string|null} - Path to ffmpeg or null if not found
+ */
+function findFfmpeg() {
+  if (process.env.FFMPEG_PATH) return process.env.FFMPEG_PATH;
+
+  const candidates = [
+    'ffmpeg', // PATH lookup (works on Docker: /usr/bin/ffmpeg)
+    'ffmpeg.exe',
+    '/usr/bin/ffmpeg',
+    '/usr/local/bin/ffmpeg',
+    'C:\\ffmpeg\\bin\\ffmpeg.exe',
+    'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe',
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      // Synchronous check — runs once at startup, not in hot path
+      const result = require('child_process').spawnSync(candidate, ['-version'], {
+        stdio: 'ignore',
+        timeout: 2000,
+      });
+      if (result.status === 0 || (result.error && result.error.code !== 'ENOENT')) {
+        return candidate;
+      }
+    } catch (e) {
+      // not found, try next
+    }
+  }
+  return null;
+}
+
+// Resolve ffmpeg once at module load
+const FFMPEG_BIN = findFfmpeg();
+
+/**
  * Convert audio file using ffmpeg (milliseconds for typical call recordings)
  * @param {string} inputPath  - Source file path (GSM/WAV)
  * @param {string} outputPath - Destination file path
@@ -102,6 +139,10 @@ exports.downloadRecording = function downloadRecording(call, localPath) {
  * @returns {Promise<string>} - Output path on success
  */
 function convertAudio(inputPath, outputPath, format) {
+  if (!FFMPEG_BIN) {
+    return Promise.reject(new Error('FFMPEG_NOT_FOUND'));
+  }
+
   return new Promise((resolve, reject) => {
     const args = ['-y', '-i', inputPath, '-ar', '8000', '-ac', '1'];
 
@@ -113,7 +154,7 @@ function convertAudio(inputPath, outputPath, format) {
       args.push(outputPath);
     }
 
-    const proc = execFile('ffmpeg', args, { timeout: 30000 }, (error) => {
+    const proc = execFile(FFMPEG_BIN, args, { timeout: 30000 }, (error) => {
       if (error) {
         reject(new Error(`ffmpeg conversion error: ${error.message}`));
       } else {
@@ -200,28 +241,46 @@ exports.download = async (req, res, next) => {
       return readStream.pipe(res);
     }
 
-    // Step 2: Convert to MP3/WAV via ffmpeg
-    const convertedFilename = `${baseName}.${format}`;
-    const convertedPath = path.join(tmpDir, `${baseName}_${Date.now()}.${format}`);
-    tempFiles.push(convertedPath);
+    // Step 2: Convert to MP3/WAV via ffmpeg (or fallback to original if ffmpeg unavailable)
+    if (FFMPEG_BIN) {
+      const convertedFilename = `${baseName}.${format}`;
+      const convertedPath = path.join(tmpDir, `${baseName}_${Date.now()}.${format}`);
+      tempFiles.push(convertedPath);
 
-    await convertAudio(rawPath, convertedPath, format);
+      await convertAudio(rawPath, convertedPath, format);
 
-    // Step 3: Stream converted file to response
-    const stat = fs.statSync(convertedPath);
+      const stat = fs.statSync(convertedPath);
 
-    res.setHeader('Content-Type', formatMap[format]);
-    res.setHeader('Content-Length', stat.size);
-    res.setHeader('Content-Disposition', `attachment; filename="${convertedFilename}"`);
+      res.setHeader('Content-Type', formatMap[format]);
+      res.setHeader('Content-Length', stat.size);
+      res.setHeader('Content-Disposition', `attachment; filename="${convertedFilename}"`);
 
-    const readStream = fs.createReadStream(convertedPath);
-    readStream.on('error', () => { if (!res.headersSent) res.status(500).end(); });
-    readStream.on('close', () => {
-      for (const f of tempFiles) {
-        try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch (e) { /* ignore */ }
-      }
-    });
-    readStream.pipe(res);
+      const readStream = fs.createReadStream(convertedPath);
+      readStream.on('error', () => { if (!res.headersSent) res.status(500).end(); });
+      readStream.on('close', () => {
+        for (const f of tempFiles) {
+          try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch (e) { /* ignore */ }
+        }
+      });
+      readStream.pipe(res);
+    } else {
+      // ffmpeg not available — stream original file with a warning header
+      console.warn('[recording] ffmpeg not found — streaming original file without conversion. Install ffmpeg for MP3 support.');
+      const stat = fs.statSync(rawPath);
+      res.setHeader('Content-Type', getMimeType(recordingFile));
+      res.setHeader('Content-Length', stat.size);
+      res.setHeader('Content-Disposition', `attachment; filename="${recordingFile}"`);
+      res.setHeader('X-Converted', 'false'); // frontend can detect this
+
+      const readStream = fs.createReadStream(rawPath);
+      readStream.on('error', () => { if (!res.headersSent) res.status(500).end(); });
+      readStream.on('close', () => {
+        for (const f of tempFiles) {
+          try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch (e) { /* ignore */ }
+        }
+      });
+      readStream.pipe(res);
+    }
   } catch (err) {
     // Cleanup temp files on error
     for (const f of tempFiles) {
