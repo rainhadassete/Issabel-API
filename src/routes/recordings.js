@@ -9,8 +9,11 @@ const router = Router();
  * /api/calls/{id}/recording:
  *   get:
  *     tags: [Recordings]
- *     summary: Baixar gravação da chamada
- *     description: Faz o download do arquivo de áudio da chamada (GSM/WAV) via SFTP do Issabel.
+ *     summary: Baixar gravação da chamada (convertida para MP3)
+ *     description: >
+ *       Faz o download do arquivo de áudio da chamada via SFTP do Issabel.
+ *       Converte automaticamente de GSM para MP3 (padrão) para reprodução nativa
+ *       no navegador via tag `<audio>`. Também aceita WAV ou arquivo original.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -20,14 +23,28 @@ const router = Router();
  *         schema:
  *           type: string
  *         description: UniqueID da chamada
+ *       - in: query
+ *         name: format
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [mp3, wav, original]
+ *           default: mp3
+ *         description: "Formato de saída: mp3 (padrão), wav (PCM 16-bit), ou original (GSM sem conversão)"
  *     responses:
  *       200:
- *         description: Arquivo de áudio
+ *         description: Arquivo de áudio convertido
  *         content:
- *           audio/x-gsm:
+ *           audio/mpeg:
  *             schema:
  *               type: string
  *               format: binary
+ *       400:
+ *         description: Formato inválido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       401:
  *         description: Token ausente ou inválido
  *         content:
@@ -54,8 +71,10 @@ router.get('/calls/:id/recording', auth, recordingController.download);
  * /api/recordings/{filename}:
  *   get:
  *     tags: [Recordings]
- *     summary: Baixar gravação pelo nome do arquivo
- *     description: Busca a chamada pelo nome do arquivo de gravação e faz o download.
+ *     summary: Baixar gravação pelo nome do arquivo (convertida para MP3)
+ *     description: >
+ *       Busca a chamada pelo nome do arquivo de gravação e faz o download.
+ *       Converte automaticamente para MP3 (padrão) para reprodução nativa no navegador.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -65,14 +84,28 @@ router.get('/calls/:id/recording', auth, recordingController.download);
  *         schema:
  *           type: string
  *         description: "Nome do arquivo de gravação (ex: exten-7728-7742-20260701-143232-1782927152.266154.gsm)"
+ *       - in: query
+ *         name: format
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [mp3, wav, original]
+ *           default: mp3
+ *         description: "Formato de saída: mp3 (padrão), wav (PCM 16-bit), ou original (GSM sem conversão)"
  *     responses:
  *       200:
- *         description: Arquivo de áudio
+ *         description: Arquivo de áudio convertido
  *         content:
- *           audio/x-gsm:
+ *           audio/mpeg:
  *             schema:
  *               type: string
  *               format: binary
+ *       400:
+ *         description: Formato inválido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  *       401:
  *         description: Token ausente ou inválido
  *         content:

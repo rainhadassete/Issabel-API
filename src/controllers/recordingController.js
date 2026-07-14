@@ -1,9 +1,11 @@
 const { Client } = require('ssh2');
+const { execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const pool = require('../config/database');
 
 const RECORDINGS_PATH = process.env.RECORDINGS_PATH || '/var/spool/asterisk/monitor';
+const TMP_DIR = path.join(__dirname, '..', '..', 'tmp');
 
 /**
  * Parse date from recording filename like `exten-7728-7742-20260701-143232-1782927152.266154.gsm`
@@ -93,12 +95,71 @@ exports.downloadRecording = function downloadRecording(call, localPath) {
 };
 
 /**
+ * Convert audio file using ffmpeg (milliseconds for typical call recordings)
+ * @param {string} inputPath  - Source file path (GSM/WAV)
+ * @param {string} outputPath - Destination file path
+ * @param {string} format     - 'mp3' or 'wav'
+ * @returns {Promise<string>} - Output path on success
+ */
+function convertAudio(inputPath, outputPath, format) {
+  return new Promise((resolve, reject) => {
+    const args = ['-y', '-i', inputPath, '-ar', '8000', '-ac', '1'];
+
+    if (format === 'mp3') {
+      args.push('-b:a', '64k', outputPath);
+    } else if (format === 'wav') {
+      args.push('-sample_fmt', 's16', outputPath);
+    } else {
+      args.push(outputPath);
+    }
+
+    const proc = execFile('ffmpeg', args, { timeout: 30000 }, (error) => {
+      if (error) {
+        reject(new Error(`ffmpeg conversion error: ${error.message}`));
+      } else {
+        resolve(outputPath);
+      }
+    });
+    proc.stderr.on('data', () => {}); // ffmpeg logs to stderr, suppress
+  });
+}
+
+/**
+ * Ensure tmp directory exists
+ */
+function ensureTempDir() {
+  if (!fs.existsSync(TMP_DIR)) {
+    fs.mkdirSync(TMP_DIR, { recursive: true });
+  }
+  return TMP_DIR;
+}
+
+/**
  * GET /api/calls/:id/recording
- * Stream the recording file via SFTP directly to the HTTP response
+ * Downloads recording from Issabel via SFTP, converts to MP3 (or WAV),
+ * and streams the converted audio so browsers can play it natively via <audio> tag.
+ *
+ * Query params:
+ *   ?format=mp3       (default) MP3  — audio/mpeg
+ *   ?format=wav       PCM WAV 16-bit — audio/wav
+ *   ?format=original  Raw file without conversion (GSM, etc.)
  */
 exports.download = async (req, res, next) => {
+  const tempFiles = [];
+
   try {
     const { id } = req.params;
+    const format = (req.query.format || 'mp3').toLowerCase();
+
+    const formatMap = {
+      mp3: 'audio/mpeg',
+      wav: 'audio/wav',
+      original: null,
+    };
+
+    if (!(format in formatMap)) {
+      return res.status(400).json({ error: 'Invalid format. Use mp3, wav, or original.' });
+    }
 
     const [rows] = await pool.query(
       'SELECT uniqueid, recordingfile, src, dst FROM asteriskcdrdb.cdr WHERE uniqueid = ?',
@@ -114,38 +175,60 @@ exports.download = async (req, res, next) => {
       return res.status(404).json({ error: 'No recording available for this call' });
     }
 
-    const remotePath = getRemotePath(call.recordingfile);
-    const mimeType = getMimeType(call.recordingfile);
     const recordingFile = call.recordingfile.trim();
+    const originalExt = path.extname(recordingFile) || '.gsm';
+    const baseName = path.basename(recordingFile, originalExt);
+    const tmpDir = ensureTempDir();
 
-    const conn = new Client();
-    conn.on('ready', () => {
-      conn.sftp((err, sftp) => {
-        if (err) { conn.end(); return res.status(500).json({ error: 'Failed to open SFTP connection' }); }
+    // Step 1: Download from SFTP to temp file
+    const rawPath = path.join(tmpDir, `${baseName}_${Date.now()}${originalExt}`);
+    tempFiles.push(rawPath);
+    await exports.downloadRecording(call, rawPath);
 
-        sftp.stat(remotePath, (err, stat) => {
-          if (err) { sftp.end(); conn.end(); return res.status(404).json({ error: 'Recording file not found on server' }); }
+    // format=original → stream raw file as-is
+    if (format === 'original') {
+      const stat = fs.statSync(rawPath);
+      res.setHeader('Content-Type', getMimeType(recordingFile));
+      res.setHeader('Content-Length', stat.size);
+      res.setHeader('Content-Disposition', `attachment; filename="${recordingFile}"`);
 
-          const readStream = sftp.createReadStream(remotePath);
-          res.setHeader('Content-Type', mimeType);
-          res.setHeader('Content-Length', stat.size);
-          res.setHeader('Content-Disposition', `attachment; filename="${recordingFile}"`);
-
-          readStream.on('error', () => { sftp.end(); conn.end(); if (!res.headersSent) res.status(500).end(); });
-          readStream.on('end', () => { sftp.end(); conn.end(); });
-          readStream.pipe(res);
-        });
+      const readStream = fs.createReadStream(rawPath);
+      readStream.on('error', () => { if (!res.headersSent) res.status(500).end(); });
+      readStream.on('close', () => {
+        try { if (fs.existsSync(rawPath)) fs.unlinkSync(rawPath); } catch (e) { /* ignore */ }
       });
+      return readStream.pipe(res);
+    }
+
+    // Step 2: Convert to MP3/WAV via ffmpeg
+    const convertedFilename = `${baseName}.${format}`;
+    const convertedPath = path.join(tmpDir, `${baseName}_${Date.now()}.${format}`);
+    tempFiles.push(convertedPath);
+
+    await convertAudio(rawPath, convertedPath, format);
+
+    // Step 3: Stream converted file to response
+    const stat = fs.statSync(convertedPath);
+
+    res.setHeader('Content-Type', formatMap[format]);
+    res.setHeader('Content-Length', stat.size);
+    res.setHeader('Content-Disposition', `attachment; filename="${convertedFilename}"`);
+
+    const readStream = fs.createReadStream(convertedPath);
+    readStream.on('error', () => { if (!res.headersSent) res.status(500).end(); });
+    readStream.on('close', () => {
+      for (const f of tempFiles) {
+        try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch (e) { /* ignore */ }
+      }
     });
-    conn.on('error', (e) => res.status(502).json({ error: 'SSH connection failed', details: e.message }));
-    conn.connect({
-      host: process.env.SSH_HOST || '192.168.70.3',
-      port: parseInt(process.env.SSH_PORT || '22'),
-      username: process.env.SSH_USER || 'root',
-      password: process.env.SSH_PASSWORD,
-      readyTimeout: 10000,
-    });
-  } catch (err) { next(err); }
+    readStream.pipe(res);
+  } catch (err) {
+    // Cleanup temp files on error
+    for (const f of tempFiles) {
+      try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch (e) { /* ignore */ }
+    }
+    next(err);
+  }
 };
 
 /**
