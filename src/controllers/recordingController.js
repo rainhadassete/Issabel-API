@@ -10,9 +10,17 @@ const TMP_DIR = path.join(__dirname, '..', '..', 'tmp');
 /**
  * Parse date from recording filename like `exten-7728-7742-20260701-143232-1782927152.266154.gsm`
  * Returns { year, month, day } or null if not parseable.
+ *
+ * The Issabel/MixMonitor format is: exten-<src>-<dst>-YYYYMMDD-HHMMSS-<uniqueid>.<ext>
+ * We must NOT match the phone numbers (which can be 8+ digits and even start with "20" in
+ * some countries) or the uniqueid (10+ digits).
+ *
+ * The date always follows a "-" in the filename and is the only 8-digit block followed by
+ * "-" + 6 digits (HHMMSS). Anchoring with the leading "-" prevents matching inside phone
+ * numbers like "1120660909" (which contains "20660909" as a substring).
  */
 function parseDateFromFilename(filename) {
-  const match = filename.match(/(\d{4})(\d{2})(\d{2})/);
+  const match = filename.match(/\-(20\d{2})(\d{2})(\d{2})(?=\-\d{6})/);
   if (!match) return null;
   return { year: match[1], month: match[2], day: match[3] };
 }
