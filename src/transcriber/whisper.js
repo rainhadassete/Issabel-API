@@ -4,7 +4,7 @@ const fs = require('fs');
 
 const WHISPER_BIN = process.env.WHISPER_BIN || path.join(__dirname, '..', '..', 'whisper', 'whisper-cli');
 const MODELS_DIR = process.env.WHISPER_MODELS_DIR || path.join(__dirname, '..', '..', 'whisper', 'models');
-const MODEL_NAME = process.env.WHISPER_MODEL || 'ggml-base.bin';
+const MODEL_NAME = process.env.WHISPER_MODEL || 'ggml-small.bin';
 const TEMP_DIR = path.join(__dirname, '..', '..', 'tmp');
 
 function ensureTempDir() {

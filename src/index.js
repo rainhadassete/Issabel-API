@@ -77,4 +77,18 @@ app.use((err, req, res, _next) => {
 
 app.listen(PORT, HOST, () => {
   console.log(`🚀 Issabel API running on ${HOST}:${PORT}`);
+
+  // Start background transcription worker
+  const transcriptionWorker = require('./services/transcriptionWorker');
+  transcriptionWorker.start();
 });
+
+// Graceful shutdown
+function shutdown(signal) {
+  console.log(`\n${signal} received — shutting down gracefully...`);
+  const transcriptionWorker = require('./services/transcriptionWorker');
+  transcriptionWorker.stop();
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
