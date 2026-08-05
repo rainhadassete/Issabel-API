@@ -6,6 +6,7 @@ const pool = mysql.createPool({
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || 'Deltec@7371',
   database: process.env.DB_NAME || 'asteriskcdrdb',
+  timezone: process.env.DB_TIMEZONE || '-03:00',
   waitForConnections: true,
   connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT || '10'),
   queueLimit: 0,
